@@ -6,7 +6,7 @@
 
 using Manifolds
 using LinearAlgebra
-using Symbolics: @register_symbolic, unwrap, variables
+using Symbolics: @register_symbolic, unwrap
 
 # See the SPD `distance` note in gdcp/spd.jl: build the term directly off the
 # symbolic point so the SPD and Lorentz methods do not collide.
