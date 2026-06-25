@@ -9,7 +9,7 @@ using Distributions
 using DSP, DataStructures
 
 using Symbolics
-import Symbolics: issym, Term
+import Symbolics: issym
 using SymbolicUtils: iscall, BasicSymbolic
 using SymbolicUtils.Rewriters
 SymbolicUtils.inspect_metadata[] = true
