@@ -218,29 +218,6 @@ function symmetric_const(x)
     return v isa AbstractMatrix && ishermitian(v)
 end
 
-# Exact test: every finite float is a rational, so converting to
-# `Rational{BigInt}` and running a pivoted LDLᵀ decides PSD without rounding.
-function psd_const(x)
-    isconstarg(x) || return false
-    v = map(constval, constval(x))
-    v isa AbstractMatrix && size(v, 1) == size(v, 2) || return false
-    all(y -> y isa Union{Integer, Rational, AbstractFloat} && isfinite(y), v) || return false
-    A = Matrix{Rational{BigInt}}(v)
-    A == transpose(A) || return false
-    while !isempty(A)
-        d = diag(A)
-        any(<(0), d) && return false
-        k = argmax(d)
-        p = A[k, k]
-        # A PSD matrix with a zero diagonal entry has a zero row there.
-        iszero(p) && return iszero(A)
-        r = [1:(k - 1); (k + 1):size(A, 1)]
-        a = A[r, k]
-        A = A[r, r] - a * transpose(a) / p
-    end
-    return true
-end
-
 function nonsingular_const(x)
     isconstarg(x) || return false
     v = map(constval, constval(x))
@@ -262,7 +239,7 @@ function manifold_point(ex, M = nothing; shifts::Bool = true)
             all(a -> isconstarg(a) ? positive_const(a) : manifold_point(a, M; shifts), args)
     elseif f === (+) && shifts
         return any(!isconstarg, args) &&
-            all(a -> isconstarg(a) ? psd_const(a) : manifold_point(a, M; shifts), args)
+            all(a -> isconstarg(a) ? psd_constant(a) : manifold_point(a, M; shifts), args)
     elseif f === hadamard_product && shifts
         # B ∘ X ⪰ λₘᵢₙ(X) Diagonal(diag(B)) ≻ 0 for PSD B with a positive diagonal.
         return manifold_point(args[1], M; shifts) && psd_constant(args[2]) &&
@@ -450,7 +427,7 @@ function logdet_gconvex_arg(a, M = nothing)
     g = operation(a)
     if g === (+)
         return count(!isconstarg, arguments(a)) == 1 &&
-            all(x -> isconstarg(x) ? psd_const(x) : positive_image(x, M), arguments(a))
+            all(x -> isconstarg(x) ? psd_constant(x) : positive_image(x, M), arguments(a))
     end
     return (
         g === conjugation || g === LinearAlgebra.diag || g === affine_map ||
