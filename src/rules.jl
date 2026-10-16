@@ -90,10 +90,54 @@ function array_domain(element_domain, N)
     end
 end
 
+"""
+    symmetric_domain()
+
+`VarDomain` value for a symbolic matrix declared symmetric (`issymmetric`).
+Attach it with `SymbolicUtils.setmetadata(X, SymbolicAnalysis.VarDomain,
+symmetric_domain())` to unlock the `eigmax`/`eigmin` rules, which otherwise
+need a provably symmetric argument; see [`known_symmetric`](@ref).
+
+# Examples
+
+```jldoctest
+julia> using SymbolicAnalysis, Symbolics, SymbolicUtils, LinearAlgebra
+
+julia> @variables X[1:3, 1:3];
+
+julia> Xs = setmetadata(X, SymbolicAnalysis.VarDomain, SymbolicAnalysis.symmetric_domain());
+
+julia> analyze(eigmax(Xs)).curvature
+Convex::Curvature = 0
+```
+"""
 function symmetric_domain()
     return CustomDomain{AbstractArray{<:Any, 2}}(issymmetric)
 end
 
+"""
+    semidefinite_domain()
+
+`VarDomain` value for a symbolic matrix declared positive definite
+(`isposdef`); the same test as [`definite_domain`](@ref). Attach it with
+`SymbolicUtils.setmetadata(X, SymbolicAnalysis.VarDomain,
+semidefinite_domain())` to unlock the matrix atoms restricted to the positive
+definite cone (`logdet`, `trinv`, `matrix_frac`, the matrix `inv`/`log`/`sqrt`);
+see [`known_posdef`](@ref).
+
+# Examples
+
+```jldoctest
+julia> using SymbolicAnalysis, Symbolics, SymbolicUtils, LinearAlgebra
+
+julia> @variables X[1:3, 1:3];
+
+julia> Xd = setmetadata(X, SymbolicAnalysis.VarDomain, SymbolicAnalysis.semidefinite_domain());
+
+julia> analyze(logdet(Xd) - tr(Xd)).curvature
+Concave::Curvature = 1
+```
+"""
 function semidefinite_domain()
     return CustomDomain{AbstractArray{<:Any, 2}}(isposdef) #not semi so needs to change
 end
@@ -102,6 +146,29 @@ function negsemidefinite_domain()
     return CustomDomain{AbstractArray{<:Any, 2}}(isposdef ∘ -) #not semi so needs to change
 end
 
+"""
+    definite_domain()
+
+`VarDomain` value for a symbolic matrix declared positive definite
+(`isposdef`); the same test as [`semidefinite_domain`](@ref). Attach it with
+`SymbolicUtils.setmetadata(X, SymbolicAnalysis.VarDomain,
+definite_domain())` to unlock the matrix atoms restricted to the positive
+definite cone (`logdet`, `trinv`, `matrix_frac`, the matrix `inv`/`log`/`sqrt`);
+see [`known_posdef`](@ref).
+
+# Examples
+
+```jldoctest
+julia> using SymbolicAnalysis, Symbolics, SymbolicUtils, LinearAlgebra
+
+julia> @variables X[1:3, 1:3];
+
+julia> Xd = setmetadata(X, SymbolicAnalysis.VarDomain, SymbolicAnalysis.definite_domain());
+
+julia> analyze(logdet(Xd) - tr(Xd)).curvature
+Concave::Curvature = 1
+```
+"""
 function definite_domain()
     return CustomDomain{AbstractArray{<:Any, 2}}(isposdef)
 end
@@ -226,11 +293,24 @@ _has_vardomain(x) = (x isa Union{Num, Symbolic}) && hasmetadata(x, VarDomain)
 # always matches it. Any other incomparable pair degrades to "no match".
 function subdomain(argdomain, ruledomain)
     ruledomain === ℂ && return true
+    is_posdef_domain(argdomain) && is_real_array_domain(ruledomain) && return true
     return try
         issubset(argdomain, ruledomain)
     catch e
         e isa MethodError ? false : rethrow()
     end
+end
+
+# Both PD domains are the same `isposdef` predicate, so `===` identifies them.
+# DomainSets cannot order `CustomDomain`s; rank is unchecked because `adjoint`
+# and `getindex` declare `array_domain(ℝ, 1)` but take matrices.
+is_posdef_domain(d) = d === definite_domain()
+
+function is_real_array_domain(d)
+    (d === definite_domain() || d === symmetric_domain()) && return true
+    d isa CustomDomain || return false
+    f = d.in
+    return hasproperty(f, :element_domain) && f.element_domain === RealLine()
 end
 
 # Selected when no registered domain covers the declared argument domains. A
@@ -494,6 +574,8 @@ function mul_curvature(args)
     end
 
     if non_constant_expr !== nothing
+        constant_prod isa Number || !loewner_curved(non_constant_expr) ||
+            return UnknownCurvature
         curv = find_curvature(non_constant_expr)
         # A linear map keeps an affine argument affine whatever the coefficients
         # are, but it preserves a curvature only when every coefficient shares a
@@ -613,7 +695,7 @@ function find_curvature(ex)::Curvature
 
     if iscall(ex)
         f, args = operation(ex), arguments(ex)
-        # @show f
+        any(loewner_curved, args) && !loewner_reader(f, args) && return UnknownCurvature
         if hasdcprule(f)
             rule, args = dcprule(f, args...)
         elseif f === (*)
