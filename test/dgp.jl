@@ -439,3 +439,151 @@ end
         @test analyze(ex, M2).gcurvature == SymbolicAnalysis.GConvex
     end
 end
+
+# Hadamard and affine-map rules hold only for PSD constant factors (Schur product
+# theorem; a PSD additive constant). Each claim below was refuted on random SPD pairs.
+struct CountingMatrix <: AbstractMatrix{Float64}
+    A::Matrix{Float64}
+    reads::Base.RefValue{Int}
+end
+Base.size(C::CountingMatrix) = size(C.A)
+Base.getindex(C::CountingMatrix, i::Int, j::Int) = (C.reads[] += 1; C.A[i, j])
+
+@testset "gDCP constant factors" begin
+    had, aff, cj = SymbolicAnalysis.hadamard_product, SymbolicAnalysis.affine_map,
+        SymbolicAnalysis.conjugation
+    D = [1.0 0.0; 0.0 -1.0]
+    Hind = [1.0 1.5; 1.5 1.0]
+    Hpsd = [2.0 1.0; 1.0 1.0]
+    I2 = Matrix(1.0I, 2, 2)
+    A0 = [1.0 2.0; 0.5 3.0]
+    @variables Bs[1:2, 1:2]
+    gconvex(ex) = analyze(ex, M2).gcurvature == SymbolicAnalysis.GConvex
+    positive(ex) = analyze(ex, M2).sign == SymbolicAnalysis.Positive
+
+    @test !positive(had(X2, D))
+    @test !gconvex(had(X2, D))
+    @test !positive(tr(had(X2, D)))
+    @test !gconvex(tr(had(X2, D)))
+    @test !gconvex(sum(had(X2, D)))
+    @test !gconvex(tr(aff(had, X2, D, I2)))
+    @test !gconvex(logdet(had(X2, Hind)))
+    @test !positive(aff(cj, X2, -0.5 * I2, I2))
+    @test !gconvex(logdet(aff(cj, X2, -0.5 * I2, I2)))
+    @test !positive(tr(aff(cj, X2, [1.0 4.0; 4.0 -2.0], A0)))
+    @test !gconvex(log(tr(had(X2, D))))
+    @test !gconvex(tr(inv(aff(cj, X2, -0.5 * I2, I2))))
+    @test !positive(had(X2, Bs))
+    @test !gconvex(logdet(aff(cj, X2, I2, Bs)))
+
+    for ex in (
+            had(X2, Hpsd), tr(had(X2, Hpsd)), aff(cj, X2, I2, A0),
+            tr(aff(had, X2, Hpsd, I2)),
+        )
+        @test positive(ex)
+        @test gconvex(ex)
+    end
+    @test gconvex(sum(had(X2, ones(2, 2))))
+    @test gconvex(logdet(had(X2, Hpsd)))
+    @test gconvex(log(tr(had(X2, Hpsd))))
+    @test gconvex(logdet(aff(cj, X2, I2, A0)))
+
+    # Matrices that are PSD only up to rounding are refused: Hadamard products
+    # scale the negative eigenvalue by large entries of X.
+    Beps = [1.0 0.0; 0.0 -2eps()]
+    Bnear = [1.0 1.0; 1.0 1.0 - eps() / 2]
+    for B in (Beps, Bnear)
+        @test !positive(had(X2, B))
+        @test !gconvex(had(X2, B))
+        @test !gconvex(tr(had(X2, B)))
+    end
+    @test eigmin(Beps .* [1.0 0.0; 0.0 1.0e12]) < -1.0e-4
+    @test det(Rational{BigInt}.(Bnear)) < 0
+    for B in ([2 1; 1 1], [2 // 1 1; 1 1], big.(Hpsd))
+        @test positive(had(X2, B))
+        @test gconvex(had(X2, B))
+    end
+
+    Cind = [1.0 4.0; 4.0 -2.0]
+    @test !gconvex(SymbolicAnalysis.sdivergence(X2, Cind))
+    @test !positive(SymbolicAnalysis.sdivergence(X2, Cind))
+    @test !gconvex(SymbolicAnalysis.sdivergence(X2, ones(2, 2)))
+    @test gconvex(SymbolicAnalysis.sdivergence(X2, I2))
+
+    let P = [2.0 0.0; 0.0 1.0], Q = [1.0 0.0; 0.0 4.0]
+        @test eigmin(D .* P) < 0
+        @test eigmin([0.1 0.0; 0.0 1.0] - 0.5I) < 0
+        γ = Manifolds.shortest_geodesic(M2, P, Q, 0.5)
+        @test tr(D .* γ) > (tr(D .* P) + tr(D .* Q)) / 2
+    end
+
+    # The exact factor proof is computed once per analysis, however many ancestors
+    # the factor has.
+    let C = CountingMatrix([2.0 1.0 0.0; 1.0 2.0 1.0; 0.0 1.0 2.0], Ref(0))
+        @variables X3[1:3, 1:3]
+        M3 = SymmetricPositiveDefinite(3)
+        function reads(f, depth)
+            ex = tr(had(X3, C))
+            for _ in 1:depth
+                ex = exp(ex)
+            end
+            C.reads[] = 0
+            f(ex)
+            return C.reads[]
+        end
+        for f in (ex -> analyze(ex, M3), ex -> SymbolicAnalysis.propagate_gcurvature(ex, M3))
+            @test reads(f, 0) > 0
+            @test reads(f, 10) == reads(f, 0)
+        end
+        @test analyze(exp(exp(tr(had(X3, C)))), M3).gcurvature == SymbolicAnalysis.GConvex
+    end
+
+    # Curvature stored by an earlier analysis must not outlive a factor that has
+    # since been mutated into an indefinite matrix.
+    let B = [2.0 1.0; 1.0 2.0]
+        raw = tr(had(X2, B))
+        annotated = SymbolicAnalysis.propagate_gcurvature(raw, M2)
+        @test SymbolicAnalysis.getgcurvature(annotated) == SymbolicAnalysis.GConvex
+        B .= D
+        @test !gconvex(raw)
+        @test !gconvex(annotated)
+        rewalked = SymbolicAnalysis.propagate_gcurvature(annotated, M2)
+        @test SymbolicAnalysis.getgcurvature(rewalked) != SymbolicAnalysis.GConvex
+        @test SymbolicAnalysis.getsign(rewalked) != SymbolicAnalysis.Positive
+    end
+
+    # The metadata walks rebuild terms, which must keep matrix atoms matrix-typed.
+    for ex in (
+            norm(had(X2, D)), norm(had(X2, Hpsd)), norm(cj(X2, A0)),
+            norm(aff(cj, X2, I2, A0)),
+        )
+        w = SymbolicAnalysis.propagate_gcurvature(ex, M2)
+        r = analyze(ex, M2)
+        @test SymbolicAnalysis.getsign(w) == r.sign
+        @test SymbolicAnalysis.getgcurvature(w) == r.gcurvature
+    end
+
+    # Matrix `norm(A, p)` is entrywise; only p = 2 is monotone in the Loewner order.
+    let J3 = ones(3, 3), I3 = Matrix(1.0I, 3, 3), M3 = SymmetricPositiveDefinite(3)
+        @variables X3n[1:3, 1:3]
+        P, Q = 4I3 - (7 / 6) * J3, 4I3 - (2 / 3) * J3
+        G = Manifolds.shortest_geodesic(M3, P, Q, 0.5)
+        H = J3 + I3 / 2
+        for (atom, h) in (
+                (A -> cj(A, I3), cj(X3n, I3)),
+                (A -> had(A, H), had(X3n, H)),
+            )
+            @test norm(atom(G), 1) > (norm(atom(P), 1) + norm(atom(Q), 1)) / 2
+            for ex in (norm(h, 1), norm(h, 3), norm(h, 0.5))
+                @test analyze(ex, M3).gcurvature != SymbolicAnalysis.GConvex
+                w = SymbolicAnalysis.propagate_gcurvature(ex, M3)
+                @test SymbolicAnalysis.getgcurvature(w) != SymbolicAnalysis.GConvex
+            end
+            for ex in (norm(h), norm(h, 2))
+                @test analyze(ex, M3).gcurvature == SymbolicAnalysis.GConvex
+                w = SymbolicAnalysis.propagate_gcurvature(ex, M3)
+                @test SymbolicAnalysis.getgcurvature(w) == SymbolicAnalysis.GConvex
+            end
+        end
+    end
+end

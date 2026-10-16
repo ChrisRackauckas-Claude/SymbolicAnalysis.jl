@@ -255,6 +255,16 @@ constant to the point. For `eigmax` and `eigsummax` the constant must be symmetr
 (a symmetric matrix, or a scalar via `.-` / `.+`), so `eigmax(X .- 5)` is `GConvex`
 but `eigmax(X + [0 3; 0 0])` is not.
 
+The `affine_map` and `hadamard_product` rules hold only for numeric positive
+semidefinite constant factors: the Hadamard factor `B` in `B ∘ X` (Schur product
+theorem) and the additive constant `B` in `B + f(X, Y)`; the conjugation factor `Y`
+must be a numeric real matrix. Any other factor, including a symbolic one, provides
+no gDCP sign or curvature premise: the atom gets `AnySign` and `GUnknownCurvature`,
+and no geodesic curvature is derived for expressions containing it, although outer
+operations may still establish a sign independently (e.g. `abs` or `norm`). The same
+holds for `sdivergence` unless each constant argument is numeric positive definite. These checks are exact: a floating-point matrix that is positive
+semidefinite only up to rounding is refused.
+
 ## DGCP Atoms (Lorentz Model)
 
 | Atom                          | Sign     | Geodesic Curvature | Monotonicity |

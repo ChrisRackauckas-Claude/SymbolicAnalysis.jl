@@ -1066,35 +1066,6 @@ function mirrored_literal(args)
     return all(isequal(el[i + (j - 1) * n], el[j + (i - 1) * n]) for i in 1:n, j in 1:n)
 end
 
-# Exact LDLᵀ: `[5.0 11; 11 24.2]` passes float `isposdef` but has det -2⁻⁴⁸.
-pd_constant(B) = exact_semidefinite(B, true)
-
-function exact_semidefinite(B, strict::Bool)
-    real_constant_matrix(B) || return false
-    Bv = map(constval, constval(B))
-    all(x -> x isa Union{Integer, Rational, AbstractFloat}, Bv) || return false
-    size(Bv, 1) == size(Bv, 2) || return false
-    A = Matrix{Rational{BigInt}}(Bv)
-    A == transpose(A) || return false
-    while !isempty(A)
-        d = diag(A)
-        any(<(0), d) && return false
-        k = argmax(d)
-        p = A[k, k]
-        iszero(p) && return !strict && iszero(A)
-        r = [1:(k - 1); (k + 1):size(A, 1)]
-        a = A[r, k]
-        A = A[r, r] - a * transpose(a) / p
-    end
-    return true
-end
-
-function real_constant_matrix(B)
-    isconstarg(B) || return false
-    Bv = constval(B)
-    return Bv isa AbstractMatrix && all(x -> (y = constval(x); y isa Real && isfinite(y)), Bv)
-end
-
 function posdef_rule(X, sign, curvature, monotonicity)
     dom = definite_domain()
     known_posdef(X) || return makerule(dom, AnySign, UnknownCurvature, AnyMono), (X,)
