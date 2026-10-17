@@ -20,6 +20,8 @@ using SymbolicAnalysis: propagate_sign, propagate_curvature, propagate_gcurvatur
     # Test analyze function
     analyze_res = analyze(ex, M)
     @test analyze_res.gcurvature == SymbolicAnalysis.GConvex
+    @test analyze(Manifolds.distance(M, q, p), M).sign == SymbolicAnalysis.Positive
+    @test analyze(Manifolds.distance(M, q, p)^2, M).gcurvature == SymbolicAnalysis.GConvex
 
     # Test lorentz_homogeneous_quadratic
     A = [2.0 0.0 0.0; 0.0 2.0 0.0; 0.0 0.0 1.0]  # Positive definite matrix
@@ -134,4 +136,27 @@ end
     @test shortest_geodesic(H, a, b, 0.5) ≈ q
     f = SymbolicAnalysis.lorentz_log_barrier
     @test f(q) > (f(a) + f(b)) / 2
+end
+
+# SPD sign rules must not fire under Lorentz for a vector argument: p = e₃ lies
+# on the hyperboloid and `quad_form(p, diag(1,1,-5)) = -5`.
+@testset "SPD atoms do not certify Lorentz vectors" begin
+    @variables p[1:3]
+    Cind = Diagonal([1, 1, -5])
+    for M in (Lorentz(2), Lorentz(3))
+        @test analyze(SymbolicAnalysis.quad_form(p, Cind), M).sign !=
+            SymbolicAnalysis.Positive
+        @test analyze(tr(p), M).sign != SymbolicAnalysis.Positive
+    end
+    e3 = [0.0, 0.0, 1.0]
+    @test SymbolicAnalysis.quad_form(e3, Matrix(Cind)) < 0
+end
+
+@testset "Lorentz parameters must match the point's dimension" begin
+    @variables p[1:3] A3[1:3, 1:3] A4[1:4, 1:4]
+    M = Lorentz(2)
+    @test analyze(SymbolicAnalysis.lorentz_homogeneous_quadratic(A4, p), M).gcurvature ==
+        SymbolicAnalysis.GUnknownCurvature
+    @test analyze(SymbolicAnalysis.lorentz_homogeneous_quadratic(A3, p), M).gcurvature ==
+        SymbolicAnalysis.GConvex
 end
