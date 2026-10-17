@@ -124,7 +124,7 @@ end
 function sdivergence(X::Symbolics.Arr, Y::Symbolics.Arr)
     return array_atom_term(sdivergence, X, Y; type = Real)
 end
-add_gdcprule(sdivergence, SymmetricPositiveDefinite, Positive, GConvex, GIncreasing)
+add_gdcprule(sdivergence, SymmetricPositiveDefinite, Positive, GConvex, GAnyMono)
 
 constant_factors_ok(::typeof(sdivergence), args) = all(a -> !isconstarg(a) || pd_constant(a), args)
 
@@ -261,7 +261,7 @@ the sum is over `f` applied to the log of the eigenvalues.
 """
 function sum_log_eigmax(f::Function, X::AbstractMatrix, k::Int)
     nrows = size(X, 1)
-    eigs = eigvals(X, (nrows - k + 1):nrows)
+    eigs = eigvals(Symmetric(X), (nrows - k + 1):nrows)
     return sum(f.(log.(eigs)))
 end
 
@@ -269,7 +269,7 @@ end
 
 function sum_log_eigmax(X::AbstractMatrix, k::Int)
     nrows = size(X, 1)
-    eigs = eigvals(X, (nrows - k + 1):nrows)
+    eigs = eigvals(Symmetric(X), (nrows - k + 1):nrows)
     return sum((log.(eigs)))
 end
 
