@@ -653,6 +653,9 @@ function find_gcurvature(ex, M = nothing)
             knowngcurv = true
         elseif f === (*)
             return mul_gcurvature(args, M)
+        elseif f === broadcast && constval(args[1]) === (*)
+            # A scalar `.*` is a scalar multiple; `mul_gcurvature` refuses matrix factors.
+            return mul_gcurvature(args[2:end], M)
         end
 
         # A Euclidean rule may supply the *composition* over an argument that already
