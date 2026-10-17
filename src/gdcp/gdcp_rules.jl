@@ -404,7 +404,9 @@ function mul_gcurvature(args, M = nothing)
                 return GUnknownCurvature
             end
         else
-            constant_prod *= constval(arg)
+            c = constval(arg)
+            c isa Number || return GUnknownCurvature
+            constant_prod *= c
         end
     end
     if non_constant_expr !== nothing
