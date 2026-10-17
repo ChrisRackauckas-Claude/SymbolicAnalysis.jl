@@ -305,6 +305,11 @@ function exact_semidefinite_uncached(B, strict::Bool)
     size(Bv, 1) == size(Bv, 2) || return false
     A = Matrix{Rational{BigInt}}(Bv)
     A == transpose(A) || return false
+    return exact_psd(A; strict)
+end
+
+# Positive (semi)definiteness of a symmetric rational matrix by pivoted LDLᵀ.
+function exact_psd(A::AbstractMatrix{Rational{BigInt}}; strict::Bool)
     while !isempty(A)
         d = diag(A)
         any(<(0), d) && return false

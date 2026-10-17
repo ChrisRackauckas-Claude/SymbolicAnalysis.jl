@@ -468,9 +468,19 @@ end
     @test tr(inv(P + Cind)) < 0
     @test analyze(tr(inv(X2 + [1 // 1 1 // 2; 1 // 2 1 // 1])), M2).sign ==
         SymbolicAnalysis.Positive
-    @test !SymbolicAnalysis.psd_const([1.0 1.0; 1.0 1 - eps() / 2])
-    @test !SymbolicAnalysis.psd_const([Inf 0.0; 0.0 1.0])
-    @test SymbolicAnalysis.psd_const([1 0; 0 0])
+    @test !SymbolicAnalysis.psd_constant([1.0 1.0; 1.0 1 - eps() / 2])
+    @test !SymbolicAnalysis.psd_constant([Inf 0.0; 0.0 1.0])
+    @test SymbolicAnalysis.psd_constant([1 0; 0 0])
+    @test !SymbolicAnalysis.pd_constant([1 0; 0 0])
+    @test SymbolicAnalysis.pd_constant([2 1; 1 2])
+    @test !SymbolicAnalysis.pd_constant([5.0 11; 11 24.2])
+    @test !SymbolicAnalysis.psd_constant([1 2; 0 1])
+    let E(A) = Matrix{Rational{BigInt}}(A)
+        @test SymbolicAnalysis.exact_psd(E([1 1; 1 1]); strict = false)
+        @test !SymbolicAnalysis.exact_psd(E([1 1; 1 1]); strict = true)
+        @test !SymbolicAnalysis.exact_psd(E([0 1; 1 0]); strict = false)
+        @test SymbolicAnalysis.exact_psd(E([0 0; 0 1]); strict = false)
+    end
 
     # Curvature, like sign, needs each symbolic argument to be a point of `M`.
     @variables Y3[1:3, 1:3] p3[1:3]

@@ -298,25 +298,6 @@ function exact_data(a)
     return exact_real(v)
 end
 
-# Positive (semi)definiteness of a symmetric rational matrix by exact elimination.
-function exact_psd(M::AbstractMatrix{Rational{BigInt}}; strict::Bool)
-    M = copy(M)
-    n = size(M, 1)
-    for k in 1:n
-        piv = M[k, k]
-        if piv < 0 || (strict && piv == 0)
-            return false
-        elseif piv == 0
-            all(iszero, @view M[k, (k + 1):n]) || return false
-            continue
-        end
-        for i in (k + 1):n, j in (k + 1):n
-            M[i, j] -= M[i, k] * M[k, j] / piv
-        end
-    end
-    return true
-end
-
 # A rational `r ≥ sqrt(s)` for rational `s ≥ 0`.
 function sqrt_upper(s::Rational{BigInt})
     r = Rational{BigInt}(sqrt(BigFloat(s; precision = 256)))
